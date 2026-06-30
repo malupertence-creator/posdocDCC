@@ -655,34 +655,119 @@ if pagina == "📊 Dashboard":
 
     st.divider()
 
-    # Mapa de blocos
-    st.subheader("Mapa de Blocos")
+    # ── Mapa de Blocos com tarefas em colunas paralelas ──────────────────────
+    st.subheader("Mapa de Blocos — execução paralela")
+
+    STATUS_BG = {
+        "Não iniciado": "#f0f0f0",
+        "Em andamento": "#fff8e1",
+        "Concluído":    "#e8f5e9",
+        "Bloqueado":    "#fce4ec",
+    }
+    STATUS_BORDER = {
+        "Não iniciado": "#bdbdbd",
+        "Em andamento": "#f9a825",
+        "Concluído":    "#43a047",
+        "Bloqueado":    "#e53935",
+    }
+
     for bloco in BLOCOS:
         b_done, b_total = by_bloco[bloco["id"]]
         b_pct = round(b_done / b_total * 100) if b_total else 0
         concluido = b_done == b_total
-        bg = "#d4edda" if concluido else ("#fff3cd" if b_done > 0 else "#f8f9fa")
-        icone = "✅" if concluido else ("🔄" if b_done > 0 else "⬜")
+        em_curso  = b_done > 0 and not concluido
+
+        hdr_bg  = "#d4edda" if concluido else ("#fff3cd" if em_curso else "#e9ecef")
+        hdr_ico = "✅" if concluido else ("🔄" if em_curso else "⬜")
+
+        # Cabeçalho do bloco
         st.markdown(
-            f'<div style="background:{bg};border-radius:8px;padding:10px 16px;'
-            f'margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;">'
-            f'<span>{icone} <b>Bloco {bloco["id"]}</b> — '
-            f'{bloco["titulo"].split("—",1)[1].strip() if "—" in bloco["titulo"] else bloco["titulo"]}</span>'
-            f'<span style="font-weight:600;color:#555;">{b_done}/{b_total} ({b_pct}%)</span>'
-            f"</div>",
+            f'<div style="background:{hdr_bg};border-radius:8px 8px 0 0;'
+            f'padding:9px 16px;margin-top:18px;display:flex;'
+            f'justify-content:space-between;align-items:center;">'
+            f'<span style="font-weight:700;font-size:0.97rem;">'
+            f'{hdr_ico} Bloco {bloco["id"]} — '
+            f'{bloco["titulo"].split("—",1)[1].strip() if "—" in bloco["titulo"] else bloco["titulo"]}'
+            f'</span>'
+            f'<span style="font-size:0.85rem;color:#555;">{b_done}/{b_total} ({b_pct}%)</span>'
+            f'</div>',
             unsafe_allow_html=True,
         )
+
+        # Colunas paralelas — uma por tarefa do bloco
+        n = len(bloco["tarefas"])
+        cols = st.columns(n)
+        for col, t in zip(cols, bloco["tarefas"]):
+            ts  = get_task_state(state, t["id"])
+            st_ = ts["status"]
+            eixo = t["eixo"] if t["eixo"] in "ABCD" else "A"
+            ec   = EIXO_COLOR[eixo]
+            sbg  = STATUS_BG[st_]
+            sbrd = STATUS_BORDER[st_]
+
+            resultado_html = (
+                f'<div style="margin-top:5px;font-size:0.75rem;color:#37474f;">'
+                f'📌 {ts["resultado"][:80]}{"…" if len(ts["resultado"]) > 80 else ""}'
+                f'</div>'
+                if ts.get("resultado") else ""
+            )
+            notas_html = (
+                f'<div style="margin-top:3px;font-size:0.72rem;color:#78909c;font-style:italic;">'
+                f'💬 {ts["notas"][:60]}{"…" if len(ts["notas"]) > 60 else ""}'
+                f'</div>'
+                if ts.get("notas") else ""
+            )
+            datas_html = ""
+            if ts.get("data_inicio") or ts.get("data_fim"):
+                d1 = f"▶ {ts['data_inicio']}" if ts.get("data_inicio") else ""
+                d2 = f"⏹ {ts['data_fim']}"   if ts.get("data_fim")    else ""
+                datas_html = (
+                    f'<div style="margin-top:4px;font-size:0.72rem;color:#90a4ae;">'
+                    f'{d1}{"&nbsp;&nbsp;" if d1 and d2 else ""}{d2}'
+                    f'</div>'
+                )
+
+            with col:
+                st.markdown(
+                    f'<div style="background:{sbg};border:1px solid {sbrd};'
+                    f'border-top:3px solid {ec};border-radius:0 0 6px 6px;'
+                    f'padding:10px 11px;min-height:120px;">'
+                    # eixo badge
+                    f'<div style="display:inline-block;background:{ec};color:#fff;'
+                    f'font-size:0.68rem;font-weight:700;padding:1px 6px;'
+                    f'border-radius:3px;margin-bottom:5px;">{eixo} · {t["id"]}</div>'
+                    # status pill
+                    f'<div style="float:right;font-size:0.8rem;">{STATUS_EMOJI[st_]}</div>'
+                    # título
+                    f'<div style="font-size:0.82rem;font-weight:600;line-height:1.3;'
+                    f'clear:right;">{t["titulo"]}</div>'
+                    # critério resumido
+                    f'<div style="margin-top:5px;font-size:0.74rem;color:#546e7a;'
+                    f'border-top:1px solid #ddd;padding-top:4px;">'
+                    f'<b>✓</b> {t["criterio"][:90]}{"…" if len(t["criterio"]) > 90 else ""}'
+                    f'</div>'
+                    + resultado_html + datas_html + notas_html +
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
+
+        # Gate go/no-go abaixo do bloco
         if bloco["gonogo"]:
             gate_ok = all(
                 get_task_state(state, t["id"])["status"] == "Concluído"
                 for t in bloco["tarefas"]
             )
-            cor = "#28a745" if gate_ok else "#dc3545"
-            emoji = "🟢" if gate_ok else "🔴"
+            cor_gate   = "#28a745" if gate_ok else "#c0392b"
+            bg_gate    = "#d4edda" if gate_ok else "#fff3cd"
+            emoji_gate = "🟢" if gate_ok else "🔴"
+            label      = "APROVADO — pode avançar" if gate_ok else "PENDENTE — bloqueia próxima fase"
             st.markdown(
-                f'<div class="gonogo-box">{emoji} <b>Go/No-Go:</b> '
-                f'<span style="color:{cor};">{"APROVADO" if gate_ok else "PENDENTE"}</span>'
-                f"</div>",
+                f'<div style="background:{bg_gate};border-left:5px solid {cor_gate};'
+                f'border-radius:0 0 6px 6px;padding:7px 14px;margin-bottom:4px;'
+                f'font-size:0.83rem;">'
+                f'{emoji_gate} <b>Go/No-Go:</b> '
+                f'<span style="color:{cor_gate};font-weight:600;">{label}</span>'
+                f'</div>',
                 unsafe_allow_html=True,
             )
 
